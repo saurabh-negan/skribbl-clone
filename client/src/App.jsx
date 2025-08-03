@@ -1,11 +1,11 @@
-import Welcome from './Welcome';
-import { Routes, Route } from 'react-router-dom';
-import Room from './Room';
-import Game from './Game';
+import Welcome from "./Welcome";
+import { Routes, Route } from "react-router-dom";
+import Room from "./Room";
+import Game from "./components/Game";
 
 function App() {
   return (
-  <Routes>
+    <Routes>
       <Route path="/" element={<Welcome />} />
       <Route path="/room" element={<Room />} />
       <Route path="/game/:roomCode" element={<Game />} />
@@ -13,4 +13,4 @@ function App() {
   );
 }
 
-export default App
+export default App;

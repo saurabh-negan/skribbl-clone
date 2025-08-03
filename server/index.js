@@ -25,6 +25,7 @@ io.on("connection", (socket) => {
   // Handle joining a room
   socket.on("join_room", ({ name, color, roomCode }) => {
     socket.join(roomCode);
+    console.log(`${name} joined room ${roomCode}`);
     if (!rooms[roomCode]) rooms[roomCode] = [];
 
     // ✅ Prevent duplicate player entries
@@ -35,6 +36,7 @@ io.on("connection", (socket) => {
 
     io.to(roomCode).emit("room_players", rooms[roomCode]);
     console.log(`👥 ${name} joined room ${roomCode}`);
+    socket.emit("joined_room_success", { success: true });
   });
 
   //on drawing event
@@ -60,9 +62,10 @@ io.on("connection", (socket) => {
   });
 
   // Handle starting game
-  socket.on("start_game", (roomCode) => {
+  socket.on("start_game", ({ roomCode }) => {
+    console.log("🧠 Game started in room:", roomCode);
+    console.log("👉 Emitting game_started to room", roomCode);
     io.to(roomCode).emit("game_started");
-    console.log("🎮 Game started in room:", roomCode);
   });
 });
 

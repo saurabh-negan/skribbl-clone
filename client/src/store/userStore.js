@@ -1,14 +1,19 @@
-import { create } from 'zustand';
+import { create } from "zustand";
 
 const useUserStore = create((set) => ({
-  name: '',
-  color: '#00bfff',
-  roomCode: '',
+  name: "",
+  color: "",
+  roomCode: "",
   isHost: false,
+  gameStarted: false,
+  players: [],
+
   setName: (name) => set({ name }),
   setColor: (color) => set({ color }),
-  setRoomCode: (code) => set({ roomCode: code }),
-  setIsHost: (value) => set({ isHost: value }),
+  setRoomCode: (roomCode) => set({ roomCode }),
+  setIsHost: (isHost) => set({ isHost }),
+  setGameStarted: (gameStarted) => set({ gameStarted }),
+  setPlayers: (players) => set({ players }),
 }));
 
 export default useUserStore;

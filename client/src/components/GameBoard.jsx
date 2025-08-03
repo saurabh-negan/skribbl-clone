@@ -1,64 +1,37 @@
-// components/GameBoard.jsx
-
-import React from "react";
 import CanvasBoard from "./CanvasBoard";
+import PlayerList from "./PlayerList";
+import useUserStore from "../store/userStore";
 
-const GameBoard = ({
-  canvasRef,
-  startDrawing,
-  draw,
-  endDrawing,
-  isHost,
-  players,
-}) => {
+const GameBoard = ({ canvasRef, startDrawing, draw, endDrawing }) => {
+  const { isHost } = useUserStore();
+
   return (
-    <div className="flex flex-col items-center justify-center h-screen w-screen">
-      {/* Left: Player List */}
-      <div className="w-1/6 bg-gray-800 text-white p-2">
-        <h2 className="text-xl font-semibold mb-2">Players</h2>
-        <ul>
-          {players.map((p, i) => (
-            <li key={i} className="mb-1" style={{ color: p.color }}>
-              {p.name}
-            </li>
-          ))}
-        </ul>
+    <div className="flex w-full h-full">
+      {/* LEFT: Player List */}
+      <div className="w-1/5 bg-zinc-800 p-4 overflow-y-auto">
+        <PlayerList />
       </div>
 
-      {/* Center: Canvas */}
-      <div className="flex-1 flex items-center justify-center bg-white relative">
-        <CanvasBoard
-          canvasRef={canvasRef}
-          isHost={isHost}
-          startDrawing={startDrawing}
-          draw={draw}
-          endDrawing={endDrawing}
-        />
-      </div>
-
-      {/* Right: Timer + Chat */}
-      <div className="w-1/4 bg-gray-100 flex flex-col">
-        {/* Top Right: Timer */}
-        <div className="bg-red-500 text-white text-center p-2 font-semibold">
-          Timer: 60s {/* Replace with actual timer state later */}
-        </div>
-
-        {/* Bottom Right: Chat */}
-        <div className="flex-1 flex flex-col justify-between p-2">
-          <div className="overflow-y-auto h-full mb-2 bg-white border rounded p-2">
-            {/* Dummy chat messages for now */}
-            <p>
-              <b>Alice:</b> Is it a dog?
-            </p>
-            <p>
-              <b>Bob:</b> Elephant?
-            </p>
-          </div>
-          <input
-            type="text"
-            placeholder="Guess the word..."
-            className="border p-2 rounded"
+      {/* MIDDLE: Drawing Canvas */}
+      <div className="flex-1 flex flex-col items-center justify-center p-2">
+        <div className="relative w-full h-full max-w-[900px] max-h-[600px] border border-zinc-700 rounded-xl overflow-hidden">
+          <CanvasBoard
+            canvasRef={canvasRef}
+            isHost={isHost}
+            startDrawing={startDrawing}
+            draw={draw}
+            endDrawing={endDrawing}
           />
+        </div>
+      </div>
+
+      {/* RIGHT: Timer and Chat (we’ll build chat later) */}
+      <div className="w-1/5 bg-zinc-800 p-4 flex flex-col justify-start">
+        <div className="text-white text-lg font-semibold mb-4 text-right">
+          ⏱️ Timer: 60s {/* hardcoded for now */}
+        </div>
+        <div className="flex-1 bg-zinc-700 rounded p-2">
+          <p className="text-sm text-gray-300">💬 Chat coming soon</p>
         </div>
       </div>
     </div>

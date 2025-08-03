@@ -4,71 +4,79 @@ const cors = require("cors");
 const { Server } = require("socket.io");
 
 const app = express();
-const server = http.createServer(app);
-
-// Allow frontend to connect from localhost:5173
 app.use(cors());
 
+const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173", // your frontend dev URL
+    origin: "*", // Allow frontend dev
     methods: ["GET", "POST"],
   },
 });
 
-// Store rooms in memory (temporary)
 const rooms = {};
 
 io.on("connection", (socket) => {
-  console.log("🔌 User connected:", socket.id);
+  console.log("New client connected:", socket.id);
 
-  // Handle joining a room
   socket.on("join_room", ({ name, color, roomCode }) => {
     socket.join(roomCode);
-    console.log(`${name} joined room ${roomCode}`);
-    if (!rooms[roomCode]) rooms[roomCode] = [];
 
-    // ✅ Prevent duplicate player entries
-    const alreadyInRoom = rooms[roomCode].some((p) => p.id === socket.id);
-    if (!alreadyInRoom) {
-      rooms[roomCode].push({ id: socket.id, name, color });
+    // ✅ Get size of the room to determine if host or not
+    const room = io.sockets.adapter.rooms.get(roomCode);
+    const isHost = room && room.size === 1;
+
+    // Save to socket's data
+    socket.data = { name, color, roomCode, isHost };
+
+    // ✅ Emit this info back to that socket only
+    socket.emit("joined_room_success", { isHost });
+
+    // ✅ Emit updated player list to everyone in the room
+    const players = [];
+    for (let [id, s] of io.sockets.sockets) {
+      if (s.data.roomCode === roomCode) {
+        players.push({
+          id,
+          name: s.data.name,
+          color: s.data.color,
+          isHost: s.data.isHost,
+        });
+      }
     }
 
-    io.to(roomCode).emit("room_players", rooms[roomCode]);
-    console.log(`👥 ${name} joined room ${roomCode}`);
-    socket.emit("joined_room_success", { success: true });
+    io.to(roomCode).emit("room_players", players);
   });
 
-  //on drawing event
-  socket.on("drawing", ({ x, y, roomCode }) => {
-    socket.to(roomCode).emit("drawing", { x, y });
+  socket.on("start_game", ({ roomCode }) => {
+    console.log("Game started in room:", roomCode);
+    io.to(roomCode).emit("game_started");
   });
 
   socket.on("beginPath", ({ roomCode }) => {
     socket.to(roomCode).emit("beginPath");
   });
 
+  socket.on("drawing", ({ x, y, roomCode }) => {
+    socket.to(roomCode).emit("drawing", { x, y });
+  });
+
   socket.on("endPath", ({ roomCode }) => {
     socket.to(roomCode).emit("endPath");
   });
 
-  // Handle disconnection
   socket.on("disconnect", () => {
-    for (const room in rooms) {
-      rooms[room] = rooms[room].filter((p) => p.id !== socket.id);
-      io.to(room).emit("room_players", rooms[room]);
+    const { roomCode } = socket.data || {};
+    if (roomCode && rooms[roomCode]) {
+      rooms[roomCode] = rooms[roomCode].filter(
+        (p) => p.name !== socket.data.name
+      );
+      io.to(roomCode).emit("room_players", rooms[roomCode]);
     }
-    console.log("❌ User disconnected:", socket.id);
-  });
-
-  // Handle starting game
-  socket.on("start_game", ({ roomCode }) => {
-    console.log("🧠 Game started in room:", roomCode);
-    console.log("👉 Emitting game_started to room", roomCode);
-    io.to(roomCode).emit("game_started");
+    console.log("Client disconnected:", socket.id);
   });
 });
 
-server.listen(3000, () => {
-  console.log("✅ Server running on http://localhost:3000");
+server.listen(3001, () => {
+  console.log("✅ Server running on port 3001");
 });

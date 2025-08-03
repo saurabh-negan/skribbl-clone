@@ -1,51 +1,83 @@
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import useUserStore from "./store/userStore";
 
-import useUserStore from './store/userStore';
-import { useNavigate } from 'react-router-dom';
+const generateRoomCode = () => {
+  return Math.random().toString(36).substring(2, 8).toUpperCase();
+};
 
 function Welcome() {
-  const { name, color, setName, setColor } = useUserStore();
+  const [nameInput, setNameInput] = useState("");
+  const [colorInput, setColorInput] = useState(
+    "#" + Math.floor(Math.random() * 16777215).toString(16)
+  );
+
+  const setName = useUserStore((s) => s.setName);
+  const setColor = useUserStore((s) => s.setColor);
+  const setRoomCode = useUserStore((s) => s.setRoomCode);
+  const setIsHost = useUserStore((s) => s.setIsHost);
+
   const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!name.trim()) return;
-    navigate('/room');
+  const handleCreateRoom = () => {
+    if (!nameInput.trim()) return;
+    const newCode = generateRoomCode();
+
+    setName(nameInput.trim());
+    setColor(colorInput);
+    setRoomCode(newCode);
+    setIsHost(true);
+
+    navigate(`/game/${newCode}`);
+  };
+
+  const handleJoinRoom = () => {
+    const joinCode = prompt("Enter Room Code:");
+    if (!nameInput.trim() || !joinCode) return;
+
+    setName(nameInput.trim());
+    setColor(colorInput);
+    setRoomCode(joinCode.toUpperCase());
+    setIsHost(false);
+
+    navigate(`/game/${joinCode.toUpperCase()}`);
   };
 
   return (
-    <div className="h-screen w-screen bg-zinc-900 flex items-center justify-center text-white">
-      <form
-        onSubmit={handleSubmit}
-        className="bg-zinc-800 p-8 rounded-xl flex flex-col gap-6 shadow-lg w-[90%] max-w-md"
-      >
-        <h2 className="text-2xl font-bold text-center">Enter Your Info</h2>
+    <div className="h-screen bg-zinc-800 text-white flex flex-col justify-center items-center gap-6">
+      <h1 className="text-4xl font-bold">🎨 Skribbl Clone</h1>
 
+      <input
+        className="p-2 rounded bg-zinc-700"
+        placeholder="Enter your name"
+        value={nameInput}
+        onChange={(e) => setNameInput(e.target.value)}
+      />
+
+      <div className="flex items-center gap-2">
+        <label htmlFor="color">Pick a color:</label>
         <input
-          type="text"
-          placeholder="Enter your name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="p-3 rounded bg-zinc-700 text-white outline-none"
-          required
+          type="color"
+          id="color"
+          value={colorInput}
+          onChange={(e) => setColorInput(e.target.value)}
         />
+      </div>
 
-        <div className="flex items-center justify-between">
-          <label>Pick a color:</label>
-          <input
-            type="color"
-            value={color}
-            onChange={(e) => setColor(e.target.value)}
-            className="w-10 h-10 border-none"
-          />
-        </div>
-
+      <div className="flex gap-4">
         <button
-          type="submit"
-          className="bg-blue-500 hover:bg-blue-600 transition-colors py-2 px-4 rounded font-semibold"
+          className="bg-green-600 px-4 py-2 rounded"
+          onClick={handleCreateRoom}
         >
-          Continue
+          Create Room
         </button>
-      </form>
+        <button
+          className="bg-blue-600 px-4 py-2 rounded"
+          onClick={handleJoinRoom}
+        >
+          Join Room
+        </button>
+      </div>
     </div>
   );
 }

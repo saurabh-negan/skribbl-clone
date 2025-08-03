@@ -133,25 +133,51 @@ function Game() {
   }, [name, color, roomCode, isHost]);
 
   useEffect(() => {
-    if (!gameStarted) return;
+    if (!gameStarted) return; // Important to avoid running early
+
+    let interval;
+
+    if (isHost) {
+      interval = setInterval(() => {
+        useUserStore.setState((state) => {
+          const newTime = state.timeLeft - 1;
+
+          socket.emit("update_timer", {
+            roomCode: state.roomCode,
+            timeLeft: newTime,
+          });
+
+          return { timeLeft: newTime > 0 ? newTime : 0 };
+        });
+      }, 1000);
+    }
+
+    // All players (including host) should listen
+    socket.on("update_timer", ({ timeLeft }) => {
+      useUserStore.setState({ timeLeft });
+    });
 
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (canvas) {
+      canvas.width = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
 
-    canvas.width = canvas.offsetWidth;
-    canvas.height = canvas.offsetHeight;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.lineCap = "round";
+        ctx.strokeStyle = "black";
+        ctx.lineWidth = 4;
+        contextRef.current = ctx;
 
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+        console.log("🎨 Canvas initialized");
+      }
+    }
 
-    ctx.lineCap = "round";
-    ctx.strokeStyle = "black";
-    ctx.lineWidth = 4;
-
-    contextRef.current = ctx;
-
-    console.log("🎨 Canvas initialized");
-  }, [gameStarted]);
+    return () => {
+      if (interval) clearInterval(interval);
+      socket.off("update_timer");
+    };
+  }, [gameStarted, isHost]);
 
   console.log("🎮 Game Loaded - Host?", isHost);
 

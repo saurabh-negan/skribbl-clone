@@ -8,6 +8,17 @@ const useUserStore = create((set) => ({
   gameStarted: false,
   players: [],
 
+  messages: [],
+  setMessages: (updateFn) =>
+    set((state) => ({ messages: updateFn(state.messages) })),
+
+  round: 1,
+  totalRounds: 3,
+  timeLeft: 60,
+  setRound: (round) => set({ round }),
+  setTotalRounds: (total) => set({ totalRounds: total }),
+  setTimeLeft: (time) => set({ timeLeft: time }),
+
   setName: (name) => set({ name }),
   setColor: (color) => set({ color }),
   setRoomCode: (roomCode) => set({ roomCode }),

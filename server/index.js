@@ -65,6 +65,14 @@ io.on("connection", (socket) => {
     socket.to(roomCode).emit("endPath");
   });
 
+  socket.on("update_timer", ({ roomCode, timeLeft }) => {
+    io.to(roomCode).emit("update_timer", { timeLeft });
+  });
+
+  socket.on("chat_message", ({ roomCode, sender, text }) => {
+    io.to(roomCode).emit("chat_message", { sender, text });
+  });
+
   socket.on("disconnect", () => {
     const { roomCode } = socket.data || {};
     if (roomCode && rooms[roomCode]) {

@@ -1,38 +1,41 @@
 import CanvasBoard from "./CanvasBoard";
 import PlayerList from "./PlayerList";
+import ChatBox from "./ChatBox";
 import useUserStore from "../store/userStore";
 
-const GameBoard = ({ canvasRef, startDrawing, draw, endDrawing }) => {
-  const { isHost } = useUserStore();
+const GameBoard = ({ canvasRef, startDrawing, draw, endDrawing, isHost }) => {
+  //const { isHost } = useUserStore();
+  const { round, totalRounds, timeLeft } = useUserStore();
 
   return (
-    <div className="flex w-full h-full">
-      {/* LEFT: Player List */}
-      <div className="w-1/5 bg-zinc-800 p-4 overflow-y-auto">
+    <div className="flex w-full h-full p-4 gap-4">
+      {/* Left side - players */}
+      <div className="w-1/5">
         <PlayerList />
       </div>
 
-      {/* MIDDLE: Drawing Canvas */}
-      <div className="flex-1 flex flex-col items-center justify-center p-2">
-        <div className="relative w-full h-full max-w-[900px] max-h-[600px] border border-zinc-700 rounded-xl overflow-hidden">
-          <CanvasBoard
-            canvasRef={canvasRef}
-            isHost={isHost}
-            startDrawing={startDrawing}
-            draw={draw}
-            endDrawing={endDrawing}
-          />
+      {/* Middle - canvas */}
+      <div className="flex-1 relative">
+        {/* Timer + Round */}
+        <div className="absolute top-2 right-2 bg-black/60 px-4 py-2 rounded text-white text-sm">
+          <div>
+            Round {round} of {totalRounds}
+          </div>
+          <div>⏳ {timeLeft}s</div>
         </div>
+
+        <CanvasBoard
+          canvasRef={canvasRef}
+          startDrawing={startDrawing}
+          draw={draw}
+          isHost={isHost}
+          endDrawing={endDrawing}
+        />
       </div>
 
-      {/* RIGHT: Timer and Chat (we’ll build chat later) */}
-      <div className="w-1/5 bg-zinc-800 p-4 flex flex-col justify-start">
-        <div className="text-white text-lg font-semibold mb-4 text-right">
-          ⏱️ Timer: 60s {/* hardcoded for now */}
-        </div>
-        <div className="flex-1 bg-zinc-700 rounded p-2">
-          <p className="text-sm text-gray-300">💬 Chat coming soon</p>
-        </div>
+      {/* Right side - chat */}
+      <div className="w-1/4">
+        <ChatBox />
       </div>
     </div>
   );

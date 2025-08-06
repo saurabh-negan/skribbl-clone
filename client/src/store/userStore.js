@@ -9,8 +9,10 @@ const useUserStore = create((set) => ({
   players: [],
 
   messages: [],
-  setMessages: (updateFn) =>
-    set((state) => ({ messages: updateFn(state.messages) })),
+  addMessage: (msg) =>
+    set((state) => ({
+      messages: [...state.messages, msg],
+    })),
 
   round: 1,
   totalRounds: 3,
@@ -25,6 +27,27 @@ const useUserStore = create((set) => ({
   setIsHost: (isHost) => set({ isHost }),
   setGameStarted: (gameStarted) => set({ gameStarted }),
   setPlayers: (players) => set({ players }),
+
+  currentWord: "",
+  setCurrentWord: (word) => set({ currentWord: word }),
+  word: "", // actual word for host
+  wordBlanks: [], // array of "_" for guessers
+  setWord: (word) => set({ word }),
+  setWordBlanks: (blanks) => set({ wordBlanks: blanks }),
+
+  guessedPlayers: [],
+  addGuessedPlayer: (name) =>
+    set((state) => ({
+      guessedPlayers: [...state.guessedPlayers, name],
+    })),
+  resetGuessedPlayers: () => set({ guessedPlayers: [] }),
+
+  // ✅ NEW additions below
+  wordChoices: [],
+  setWordChoices: (choices) => set({ wordChoices: choices }),
+
+  canDraw: false,
+  setCanDraw: (val) => set({ canDraw: val }),
 }));
 
 export default useUserStore;

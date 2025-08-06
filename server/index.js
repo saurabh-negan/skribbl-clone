@@ -16,6 +16,13 @@ const io = new Server(server, {
 
 const rooms = {};
 
+const allWords = ["apple", "car", "mountain", "river", "pencil", "sun", "tree"]; // example
+
+function getRandomWords() {
+  const shuffled = [...allWords].sort(() => 0.5 - Math.random());
+  return shuffled.slice(0, 3);
+}
+
 io.on("connection", (socket) => {
   console.log("New client connected:", socket.id);
 
@@ -49,15 +56,40 @@ io.on("connection", (socket) => {
   });
 
   socket.on("start_game", ({ roomCode }) => {
-    console.log("Game started in room:", roomCode);
+    const room = io.sockets.adapter.rooms.get(roomCode);
+    if (!room) return;
+
+    // Get all socket IDs in the room
+    const players = Array.from(room);
+
+    // For now, pick the first player as host
+    const hostSocketId = players[0];
+
+    // Emit word options to the host only
+    io.to(hostSocketId).emit("choose_word", getRandomWords());
+
+    // Notify all players that game has started
     io.to(roomCode).emit("game_started");
   });
 
-  socket.on("beginPath", ({ roomCode }) => {
-    socket.to(roomCode).emit("beginPath");
+  socket.on("beginPath", ({ roomCode, offsetX, offsetY }) => {
+    socket.to(roomCode).emit("beginPath", { offsetX, offsetY });
   });
 
-  socket.on("drawing", ({ x, y, roomCode }) => {
+  socket.on("word_selected", ({ roomCode, word }) => {
+    console.log(`Word "${word}" selected for room ${roomCode}`);
+
+    // Save selected word
+    rooms[roomCode] = { word };
+
+    // Inform guessers of blanks
+    socket.to(roomCode).emit("set_word_blanks", { length: word.length });
+
+    // Notify host drawing can begin
+    io.to(socket.id).emit("start_drawing");
+  });
+
+  socket.on("drawing", ({ roomCode, x, y }) => {
     socket.to(roomCode).emit("drawing", { x, y });
   });
 
@@ -69,7 +101,8 @@ io.on("connection", (socket) => {
     io.to(roomCode).emit("update_timer", { timeLeft });
   });
 
-  socket.on("chat_message", ({ roomCode, sender, text }) => {
+  socket.on("chat_message", (data) => {
+    const { roomCode, sender, text } = data;
     io.to(roomCode).emit("chat_message", { sender, text });
   });
 

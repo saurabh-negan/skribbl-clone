@@ -1,15 +1,23 @@
 import useUserStore from "../store/userStore";
 
 const PlayerList = () => {
-  const { players } = useUserStore();
+  const { players, scores } = useUserStore();
+
+  // Combine players with scores and sort descending
+  const playersWithScores = players
+    .map((p) => ({
+      ...p,
+      score: scores[p.id] || 0,
+    }))
+    .sort((a, b) => (b.score || 0) - (a.score || 0));
 
   return (
     <div>
       <h2 className="text-xl font-bold mb-4">Players</h2>
       <ul className="space-y-2">
-        {players.map((player, index) => (
+        {playersWithScores.map((player) => (
           <li
-            key={index}
+            key={player.id}
             className="flex items-center justify-between bg-zinc-700 px-3 py-2 rounded"
           >
             <div className="flex items-center space-x-2">
@@ -19,8 +27,9 @@ const PlayerList = () => {
               />
               <span>{player.name}</span>
             </div>
-            <span className="text-sm text-gray-300">0 pts</span>{" "}
-            {/* Score placeholder */}
+            <span className="text-sm text-gray-300">
+              {player.score || 0} pts
+            </span>
           </li>
         ))}
       </ul>

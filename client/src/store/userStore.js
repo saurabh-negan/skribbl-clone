@@ -40,9 +40,33 @@ const useUserStore = create((set) => ({
     set((state) => ({
       guessedPlayers: [...state.guessedPlayers, name],
     })),
+
+  // SCORE keeping
+  scores: {}, // { [socketId]: number }
+
+  // add points (delta)
+  setScore: (id, pts) =>
+    set((state) => ({
+      scores: {
+        ...state.scores,
+        [id]: (state.scores[id] || 0) + pts,
+      },
+    })),
+
+  // overwrite all scores (authoritative sync from server)
+  setAllScores: (newScores) =>
+    set(() => ({
+      // ensure keys are strings (socket ids) and values numbers
+      scores: Object.fromEntries(
+        Object.entries(newScores || {}).map(([k, v]) => [k, Number(v) || 0])
+      ),
+    })),
+
+  resetScores: () => set({ scores: {} }),
+
   resetGuessedPlayers: () => set({ guessedPlayers: [] }),
 
-  // ✅ NEW additions below
+  // word choices
   wordChoices: [],
   setWordChoices: (choices) => set({ wordChoices: choices }),
 

@@ -21,7 +21,8 @@ const io = new Server(server, {
 //   currentDrawerId: socketId,
 //   scores: { [socketId]: number },
 //   timerHandle: NodeJS.Timeout (optional),
-//   timeLeft: number
+//   timeLeft: number,
+//   roundStats: { guesserPointsSum: number, guesserCount: number }
 // }
 const rooms = {};
 const guessedThisRound = {}; // { roomCode: Set<socket.id> }
@@ -32,7 +33,7 @@ const ROOM_TTL_MS = 60 * 1000; // keep empty room for 60s before final deletion
 const allWords = ["apple", "car", "mountain", "river", "pencil", "sun", "tree"];
 
 function getRandomWords() {
-  const shuffled = [...allWords].sort(() => 0.5 - Math.random());
+  const shuffled = allWords.slice().sort(() => 0.5 - Math.random());
   return shuffled.slice(0, 3);
 }
 
@@ -40,11 +41,44 @@ const ROUND_TIME = 60; // seconds
 const MIN_POINTS = 100;
 const MAX_POINTS = 1000;
 
-// helper to compute points (hundreds-ish)
+// helper to compute guesser points (hundreds-ish)
 function computePoints(timeLeft, roundTime = ROUND_TIME) {
   const pct = Math.max(0, timeLeft) / roundTime; // 0..1
   const pts = Math.round(pct * MAX_POINTS);
   return Math.max(MIN_POINTS, pts);
+}
+
+// Award drawer points for the round based on guessers' average points
+function awardDrawerForRound(roomCode) {
+  const room = rooms[roomCode];
+  if (!room) return;
+
+  const stats = room.roundStats || { guesserPointsSum: 0, guesserCount: 0 };
+  const drawerId = room.currentDrawerId;
+  if (!drawerId) return;
+
+  let drawerPts = 0;
+  if (stats.guesserCount > 0) {
+    // average of guessers' points (rounded)
+    drawerPts = Math.round(stats.guesserPointsSum / stats.guesserCount);
+  } else {
+    // no one guessed correctly this round => award 0 (change to MIN_POINTS if you prefer)
+    drawerPts = 0;
+  }
+
+  // Update drawer's score (initialize if absent)
+  room.scores[drawerId] = (room.scores[drawerId] || 0) + drawerPts;
+
+  // Notify clients about drawer award and broadcast updated scoreboard
+  io.to(roomCode).emit("drawer_awarded", {
+    drawerId,
+    points: drawerPts,
+  });
+
+  io.to(roomCode).emit("scores_update", { scores: room.scores });
+
+  // reset roundStats for next round
+  room.roundStats = { guesserPointsSum: 0, guesserCount: 0 };
 }
 
 io.on("connection", (socket) => {
@@ -71,6 +105,7 @@ io.on("connection", (socket) => {
         currentDrawerId: null,
         scores: {},
         timeLeft: ROUND_TIME,
+        roundStats: { guesserPointsSum: 0, guesserCount: 0 },
       };
     }
 
@@ -93,7 +128,7 @@ io.on("connection", (socket) => {
           id,
           name: s.data.name,
           color: s.data.color,
-          isHost: rooms[roomCode].currentDrawerId === id, // mark current drawer
+          isDrawer: rooms[roomCode].currentDrawerId === id, // mark current drawer explicitly
           score: rooms[roomCode].scores[id] || 0,
         });
       }
@@ -117,33 +152,74 @@ io.on("connection", (socket) => {
     roomState.round = 1;
     roomState.totalRounds = roomState.totalRounds || 3;
     roomState.timeLeft = ROUND_TIME;
+    roomState.roundStats = { guesserPointsSum: 0, guesserCount: 0 };
 
-    // choose first drawer as first socket in room
+    // choose first drawer as first socket in room (deterministic)
     const players = Array.from(roomSockets);
-    const hostSocketId = players[0];
-    roomState.currentDrawerId = hostSocketId;
+    const firstDrawerId = players[0];
+    roomState.currentDrawerId = firstDrawerId;
     rooms[roomCode] = roomState;
 
     // reset guessed set
     guessedThisRound[roomCode] = new Set();
 
-    // notify host to pick a word
-    io.to(hostSocketId).emit("choose_word", getRandomWords());
-
-    // notify all clients that game started
+    // Notify all clients that the game is started (UI can mount)
     io.to(roomCode).emit("game_started", {
       round: roomState.round,
       totalRounds: roomState.totalRounds,
     });
 
-    // start timer for this room
+    // Now ask the first drawer to choose a word
+    io.to(firstDrawerId).emit("choose_word", getRandomWords());
+  });
+
+  socket.on("word_selected", ({ roomCode, word }) => {
+    console.log(`Word "${word}" selected for room ${roomCode} by ${socket.id}`);
+    if (!rooms[roomCode]) {
+      rooms[roomCode] = {
+        scores: {},
+        roundStats: { guesserPointsSum: 0, guesserCount: 0 },
+        round: 1,
+        totalRounds: 3,
+      };
+    }
+
+    // store secret
+    rooms[roomCode].word = word;
+    // reset guessed set for the round
+    guessedThisRound[roomCode] = new Set();
+
+    // ensure roundStats exists (fresh round)
+    if (!rooms[roomCode].roundStats)
+      rooms[roomCode].roundStats = { guesserPointsSum: 0, guesserCount: 0 };
+
+    // inform guessers with blanks
+    io.to(roomCode).emit("set_word_blanks", { length: word.length });
+
+    // Determine timeLeft and start the timer for this **actual** round
+    // Clear any previous timer if present
     if (roomTimers[roomCode]) {
       clearInterval(roomTimers[roomCode]);
+      delete roomTimers[roomCode];
     }
+
     let timeLeft = ROUND_TIME;
     rooms[roomCode].timeLeft = timeLeft;
     io.to(roomCode).emit("update_timer", { timeLeft });
 
+    // Broadcast a round_started event to everyone with authoritative drawerId
+    const drawerId = socket.id; // the player who emitted word_selected is the drawer
+    io.to(roomCode).emit("round_started", {
+      drawerId,
+      round: rooms[roomCode].round || 1,
+      totalRounds: rooms[roomCode].totalRounds || 3,
+      timeLeft,
+    });
+
+    // Also notify the drawer directly with the full word (optional)
+    io.to(drawerId).emit("start_drawing", { word });
+
+    // Start interval
     roomTimers[roomCode] = setInterval(() => {
       timeLeft -= 1;
       rooms[roomCode].timeLeft = timeLeft;
@@ -153,7 +229,10 @@ io.on("connection", (socket) => {
       if (timeLeft <= 0) {
         clearInterval(roomTimers[roomCode]);
         delete roomTimers[roomCode];
-        // end of round
+
+        // end of round - award drawer points
+        awardDrawerForRound(roomCode);
+
         io.to(roomCode).emit("round_ended", { round: rooms[roomCode].round });
         io.to(roomCode).emit("clear_canvas");
 
@@ -163,18 +242,21 @@ io.on("connection", (socket) => {
           // advance round
           rooms[roomCode].round = currentRound + 1;
 
-          // rotate drawer to next player
-          const playerIds = Array.from(roomSockets);
+          // rotate drawer to next player (deterministic order from room sockets)
+          const playerIds = Array.from(
+            io.sockets.adapter.rooms.get(roomCode) || []
+          );
           let currentIndex = playerIds.indexOf(rooms[roomCode].currentDrawerId);
           if (currentIndex === -1) currentIndex = 0;
           const nextIndex = (currentIndex + 1) % playerIds.length;
           const nextDrawerId = playerIds[nextIndex];
           rooms[roomCode].currentDrawerId = nextDrawerId;
 
-          // reset guessed set for new round
+          // reset guessed set and roundStats for new round
           guessedThisRound[roomCode] = new Set();
+          rooms[roomCode].roundStats = { guesserPointsSum: 0, guesserCount: 0 };
 
-          // emit updated player list (so clients can update who is drawer)
+          // broadcast updated players (so clients can mark drawer)
           const playersList = [];
           for (let [id, s] of io.sockets.sockets) {
             if (s.data && s.data.roomCode === roomCode) {
@@ -182,36 +264,15 @@ io.on("connection", (socket) => {
                 id,
                 name: s.data.name,
                 color: s.data.color,
-                isHost: rooms[roomCode].currentDrawerId === id,
+                isDrawer: rooms[roomCode].currentDrawerId === id,
                 score: rooms[roomCode].scores[id] || 0,
               });
             }
           }
           io.to(roomCode).emit("room_players", playersList);
 
-          // tell the next drawer to choose a word
+          // ask next drawer to choose a word
           io.to(nextDrawerId).emit("choose_word", getRandomWords());
-
-          // start the timer for the next round
-          let nextTime = ROUND_TIME;
-          rooms[roomCode].timeLeft = nextTime;
-          io.to(roomCode).emit("update_timer", { timeLeft: nextTime });
-
-          roomTimers[roomCode] = setInterval(() => {
-            nextTime -= 1;
-            rooms[roomCode].timeLeft = nextTime;
-            if (nextTime >= 0)
-              io.to(roomCode).emit("update_timer", { timeLeft: nextTime });
-            if (nextTime <= 0) {
-              clearInterval(roomTimers[roomCode]);
-              delete roomTimers[roomCode];
-              io.to(roomCode).emit("round_ended", {
-                round: rooms[roomCode].round,
-              });
-              io.to(roomCode).emit("clear_canvas");
-              // continue rotation in next interval (could refactor to reuse logic)
-            }
-          }, 1000);
         } else {
           // game over - emit final scores
           io.to(roomCode).emit("game_over", {
@@ -220,20 +281,6 @@ io.on("connection", (socket) => {
         }
       }
     }, 1000);
-  });
-
-  socket.on("word_selected", ({ roomCode, word }) => {
-    console.log(`Word "${word}" selected for room ${roomCode} by ${socket.id}`);
-    if (!rooms[roomCode]) rooms[roomCode] = { scores: {} };
-    rooms[roomCode].word = word;
-    // reset guessed set
-    guessedThisRound[roomCode] = new Set();
-
-    // inform guessers with blanks
-    socket.to(roomCode).emit("set_word_blanks", { length: word.length });
-
-    // notify the host/drawer that drawing can begin (host already knows)
-    io.to(socket.id).emit("start_drawing");
   });
 
   socket.on("chat_message", ({ roomCode, sender, text }) => {
@@ -255,9 +302,16 @@ io.on("connection", (socket) => {
         // compute points using timeLeft
         const timeLeft = roomData.timeLeft ?? ROUND_TIME;
         const pts = computePoints(timeLeft, ROUND_TIME);
-        // award points
+
+        // award points to the guesser
         rooms[roomCode].scores[socket.id] =
           (rooms[roomCode].scores[socket.id] || 0) + pts;
+
+        // accumulate stats for drawer awarding
+        if (!rooms[roomCode].roundStats)
+          rooms[roomCode].roundStats = { guesserPointsSum: 0, guesserCount: 0 };
+        rooms[roomCode].roundStats.guesserPointsSum += pts;
+        rooms[roomCode].roundStats.guesserCount += 1;
 
         // broadcast correct guess event and updated scores
         io.to(roomCode).emit("correct_guess", {
@@ -324,7 +378,7 @@ io.on("connection", (socket) => {
             id,
             name: s.data.name,
             color: s.data.color,
-            isHost: rooms[roomCode].currentDrawerId === id,
+            isDrawer: rooms[roomCode].currentDrawerId === id,
             score: rooms[roomCode].scores[id] || 0,
           });
         }
@@ -357,7 +411,7 @@ io.on("connection", (socket) => {
               id,
               name: s.data.name,
               color: s.data.color,
-              isHost: rooms[roomCode].currentDrawerId === id,
+              isDrawer: rooms[roomCode].currentDrawerId === id,
               score: rooms[roomCode].scores[id] || 0,
             });
           }

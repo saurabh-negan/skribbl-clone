@@ -2,18 +2,27 @@ import useUserStore from "../store/userStore";
 import socket from "../socket";
 
 const WordSelection = () => {
-  const { wordChoices, roomCode, setWord, setWordChoices } = useUserStore();
+  const {
+    wordChoices = [],
+    roomCode,
+    setIsChoosingWord,
+    clearWordChoices,
+  } = useUserStore();
+
+  if (!wordChoices.length) return null;
 
   const selectWord = (word) => {
-    setWord(word);
-    setWordChoices([]); // Hide this component
-    socket.emit("word_selected", { word, roomCode });
+    // Drawer picks; server will confirm and broadcast round start
+    socket.emit("word_selected", { roomCode, word });
+    // Close selector locally
+    setIsChoosingWord?.(false);
+    clearWordChoices?.();
   };
 
   return (
-    <div className="flex flex-col items-center justify-center h-screen text-white bg-zinc-900">
+    <div className="flex flex-col items-center justify-center h-screen text-white bg-zinc-900/95">
       <h2 className="text-2xl font-bold mb-4">Choose a Word</h2>
-      <div className="flex space-x-4">
+      <div className="flex flex-wrap gap-3">
         {wordChoices.map((word, idx) => (
           <button
             key={idx}

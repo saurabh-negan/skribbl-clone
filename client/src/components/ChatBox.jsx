@@ -4,7 +4,7 @@ import socket from "../socket";
 
 const ChatBox = () => {
   const [message, setMessage] = useState("");
-  const { name, roomCode, messages, addMessage, wordBlanks } = useUserStore();
+  const { name, roomCode, messages, wordBlanks } = useUserStore();
   const messagesEndRef = useRef(null);
 
   const sendMessage = (e) => {
@@ -15,16 +15,9 @@ const ChatBox = () => {
     setMessage("");
   };
 
+  // Auto-scroll on new messages
   useEffect(() => {
-    socket.on("chat_message", addMessage);
-    return () => socket.off("chat_message");
-  }, [addMessage]);
-
-  // Auto-scroll to bottom when messages change
-  useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
-    }
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   return (
@@ -37,18 +30,20 @@ const ChatBox = () => {
         )}
         {messages.map((msg, idx) => (
           <div key={idx} className="bg-zinc-700 p-2 rounded">
-            <strong className="text-green-400">{msg.sender}</strong>:{" "}
-            <span>{msg.text}</span>
+            <strong className="text-green-400">
+              {msg.system ? "System" : msg.sender}
+            </strong>
+            : <span>{msg.text}</span>
           </div>
         ))}
-        {/* Dummy div to scroll into */}
         <div ref={messagesEndRef} />
       </div>
+
       <form onSubmit={sendMessage} className="flex">
         <input
           type="text"
           className="flex-1 p-2 bg-zinc-600 text-white rounded-l focus:outline-none"
-          placeholder="Type your guess..."
+          placeholder="Type your message..."
           value={message}
           onChange={(e) => setMessage(e.target.value)}
         />

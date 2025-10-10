@@ -1,11 +1,22 @@
+// CanvasBoard.jsx
 import React, { useRef, useLayoutEffect, useState, useEffect } from "react";
 import useUserStore from "../store/userStore";
 import socket from "../socket";
+import { throttle } from "../utils/throttle";
 
-const CanvasBoard = () => {
+/**
+ * CanvasBoard
+ * - unchanged drawing / resize / snapshot logic
+ * - accepts `overlayActive` prop (default false)
+ *   when overlayActive is true, the canvas sets pointerEvents: 'none'
+ *   so overlay controls can receive clicks.
+ */
+const CanvasBoard = ({ overlayActive = false }) => {
   const canvasRef = useRef(null);
   const contextRef = useRef(null);
   const resizeObserverRef = useRef(null);
+  const snapshotTimerRef = useRef(null);
+  const throttledEmitRef = useRef(null);
 
   const roomCode = useUserStore((s) => s.roomCode);
   const canDraw = useUserStore((s) => s.canDraw);
@@ -23,12 +34,10 @@ const CanvasBoard = () => {
     const height = Math.max(1, Math.floor(parent.clientHeight));
 
     // Preserve current content by taking a dataURL snapshot
-    // (cheap & easy; acceptable for canvases of moderate size)
     let snapshotData = null;
     try {
       snapshotData = canvas.toDataURL("image/png");
     } catch (err) {
-      // toDataURL can fail in some circumstances; ignore if it does
       snapshotData = null;
     }
 
@@ -61,12 +70,22 @@ const CanvasBoard = () => {
           // draw the image into CSS pixel space (user space)
           ctx.drawImage(img, 0, 0, width, height);
         } catch (err) {
-          // swallow drawing errors
           console.warn("Failed to restore canvas snapshot:", err);
         }
       };
       img.src = snapshotData;
     }
+
+    // After resizing, request a fresh snapshot from the current drawer (if not the drawer)
+    if (snapshotTimerRef.current) {
+      clearTimeout(snapshotTimerRef.current);
+    }
+    snapshotTimerRef.current = setTimeout(() => {
+      if (roomCode) {
+        socket.emit("request_canvas_snapshot", { roomCode });
+      }
+      snapshotTimerRef.current = null;
+    }, 150);
   };
 
   useLayoutEffect(() => {
@@ -91,6 +110,10 @@ const CanvasBoard = () => {
         resizeObserverRef.current.disconnect();
         resizeObserverRef.current = null;
       }
+      if (snapshotTimerRef.current) {
+        clearTimeout(snapshotTimerRef.current);
+        snapshotTimerRef.current = null;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -104,6 +127,20 @@ const CanvasBoard = () => {
       y: event.clientY - rect.top,
     };
   };
+
+  // initialize throttled emitter (30 FPS ~ 33ms)
+  useEffect(() => {
+    throttledEmitRef.current = throttle((x, y) => {
+      if (!roomCode) return;
+      socket.emit("drawing", { roomCode, x, y });
+    }, 33);
+
+    return () => {
+      if (throttledEmitRef.current && throttledEmitRef.current.cancel) {
+        throttledEmitRef.current.cancel();
+      }
+    };
+  }, [roomCode]);
 
   const startDrawing = (e) => {
     if (!canDraw) return;
@@ -125,7 +162,9 @@ const CanvasBoard = () => {
     if (!ctx) return;
     ctx.lineTo(x, y);
     ctx.stroke();
-    socket.emit("drawing", { roomCode, x, y });
+    if (throttledEmitRef.current) {
+      throttledEmitRef.current(x, y);
+    }
   };
 
   const stopDrawing = () => {
@@ -139,18 +178,12 @@ const CanvasBoard = () => {
 
   // Respond to server requests and incoming snapshots
   useEffect(() => {
-    // Drawer receives a request to capture & send a snapshot to a specific client
     socket.on("request_canvas_snapshot_to_drawer", ({ requesterId }) => {
-      // only drawer should send
-      const room = roomCode && rooms && rooms[roomCode]; // avoid lint - we'll not rely on rooms here
-      // we can't access server rooms from client; rely on canDraw as drawer indicator
       if (!canDraw) return;
-      // capture snapshot and send to server for relaying
       const canvas = canvasRef.current;
       if (!canvas) return;
       try {
         const dataURL = canvas.toDataURL("image/png");
-        // send to server with targetId
         socket.emit("canvas_snapshot", {
           roomCode,
           targetId: requesterId,
@@ -161,7 +194,6 @@ const CanvasBoard = () => {
       }
     });
 
-    // Any client may receive a snapshot (sent by drawer via server)
     socket.on("canvas_snapshot", ({ dataURL }) => {
       if (!dataURL) return;
       const canvas = canvasRef.current;
@@ -169,7 +201,6 @@ const CanvasBoard = () => {
       if (!canvas || !ctx) return;
       const img = new Image();
       img.onload = () => {
-        // draw snapshot into canvas user-space (CSS px)
         try {
           const width = canvas.clientWidth;
           const height = canvas.clientHeight;
@@ -187,25 +218,6 @@ const CanvasBoard = () => {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canDraw, roomCode]);
-
-  // When component mounts and whenever tab becomes visible, request a snapshot
-  useEffect(() => {
-    // request when component mounts (helps new joiners)
-    if (roomCode) {
-      socket.emit("request_canvas_snapshot", { roomCode });
-    }
-
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "visible" && roomCode) {
-        // ask the drawer to send current canvas
-        socket.emit("request_canvas_snapshot", { roomCode });
-      }
-    };
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-    };
-  }, [roomCode]);
 
   // socket listeners for real-time drawing (existing)
   useEffect(() => {
@@ -226,11 +238,10 @@ const CanvasBoard = () => {
       if (!ctx) return;
       ctx.closePath();
     });
-    socket.on("client_clear_canvas", () => {
+    socket.on("clear_canvas", () => {
       const canvas = canvasRef.current;
       const ctx = contextRef.current;
       if (!canvas || !ctx) return;
-      // clear in user coordinates (CSS px)
       ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
     });
 
@@ -238,7 +249,7 @@ const CanvasBoard = () => {
       socket.off("beginPath");
       socket.off("drawing");
       socket.off("endPath");
-      socket.off("client_clear_canvas");
+      socket.off("clear_canvas");
     };
   }, []);
 
@@ -250,7 +261,12 @@ const CanvasBoard = () => {
       onMouseUp={stopDrawing}
       onMouseLeave={stopDrawing}
       className="absolute inset-0 block bg-white"
-      style={{ cursor: canDraw ? "crosshair" : "not-allowed", zIndex: 10 }}
+      style={{
+        cursor: canDraw ? "crosshair" : "not-allowed",
+        zIndex: 10,
+        // If overlay is active, allow overlay to receive pointer events
+        pointerEvents: overlayActive ? "none" : "auto",
+      }}
     />
   );
 };

@@ -2,15 +2,17 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import useUserStore from "./store/userStore";
 
-const generateRoomCode = () => {
-  return Math.random().toString(36).substring(2, 8).toUpperCase();
-};
+const generateRoomCode = () =>
+  Math.random().toString(36).substring(2, 8).toUpperCase();
+const randHex = () =>
+  Math.floor(Math.random() * 0xffffff)
+    .toString(16)
+    .padStart(6, "0");
 
 function Welcome() {
   const [nameInput, setNameInput] = useState("");
-  const [colorInput, setColorInput] = useState(
-    "#" + Math.floor(Math.random() * 16777215).toString(16)
-  );
+  const [colorInput, setColorInput] = useState("#" + randHex());
+  const [error, setError] = useState("");
 
   const setName = useUserStore((s) => s.setName);
   const setColor = useUserStore((s) => s.setColor);
@@ -18,28 +20,34 @@ function Welcome() {
   const setIsHost = useUserStore((s) => s.setIsHost);
 
   const navigate = useNavigate();
+  const nameOk = nameInput.trim().length > 0;
 
   const handleCreateRoom = () => {
-    if (!nameInput.trim()) return;
+    if (!nameOk) {
+      setError("Please enter your name");
+      return;
+    }
     const newCode = generateRoomCode();
-
+    setError("");
     setName(nameInput.trim());
     setColor(colorInput);
     setRoomCode(newCode);
     setIsHost(true);
-
     navigate(`/game/${newCode}`);
   };
 
   const handleJoinRoom = () => {
+    if (!nameOk) {
+      setError("Please enter your name");
+      return;
+    }
     const joinCode = prompt("Enter Room Code:");
-    if (!nameInput.trim() || !joinCode) return;
-
+    if (!joinCode) return;
+    setError("");
     setName(nameInput.trim());
     setColor(colorInput);
     setRoomCode(joinCode.toUpperCase());
     setIsHost(false);
-
     navigate(`/game/${joinCode.toUpperCase()}`);
   };
 
@@ -51,8 +59,13 @@ function Welcome() {
         className="p-2 rounded bg-zinc-700"
         placeholder="Enter your name"
         value={nameInput}
-        onChange={(e) => setNameInput(e.target.value)}
+        onChange={(e) => {
+          setNameInput(e.target.value);
+          if (error) setError("");
+        }}
       />
+
+      {error && <div className="text-red-400 text-sm -mt-3">{error}</div>}
 
       <div className="flex items-center gap-2">
         <label htmlFor="color">Pick a color:</label>
@@ -66,14 +79,24 @@ function Welcome() {
 
       <div className="flex gap-4">
         <button
-          className="bg-green-600 px-4 py-2 rounded"
+          className={`px-4 py-2 rounded ${
+            nameOk
+              ? "bg-green-600 hover:bg-green-700"
+              : "bg-gray-600 cursor-not-allowed"
+          }`}
           onClick={handleCreateRoom}
+          disabled={!nameOk}
         >
           Create Room
         </button>
         <button
-          className="bg-blue-600 px-4 py-2 rounded"
+          className={`px-4 py-2 rounded ${
+            nameOk
+              ? "bg-blue-600 hover:bg-blue-700"
+              : "bg-gray-600 cursor-not-allowed"
+          }`}
           onClick={handleJoinRoom}
+          disabled={!nameOk}
         >
           Join Room
         </button>
